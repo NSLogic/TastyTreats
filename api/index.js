@@ -16,6 +16,7 @@ const razorpay = new Razorpay({
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const app = express();
 const PORT = 3000;
+
 app.use(
   cors({
     origin: [
@@ -28,12 +29,33 @@ app.use(
   }),
 );
 app.use(express.json());
+
+// NEW SECURITY FIX: Middleware function to inspect incoming JWT tokens
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // Get token from "Bearer <TOKEN>"
+
+  if (!token) {
+    return res.status(401).json({ message: "Access denied. Token missing." });
+  }
+
+  jwt.verify(token, "your_secret_key", (err, user) => {
+    if (err) {
+      return res.status(403).json({ message: "Invalid or expired token." });
+    }
+    req.user = user;
+    next();
+  });
+};
+
 const dbURI = process.env.dbURI;
 mongoose
   .connect(dbURI)
   .then(() => console.log("Connected to MongoDB!"))
   .catch((err) => console.error("Database connection error:", err));
-app.post("/api/bookmark", async (req, res) => {
+
+// NEW SECURITY FIX: Added authenticateToken middleware to protect bookmarks
+app.post("/api/bookmark", authenticateToken, async (req, res) => {
   const { userId, recipeId } = req.body;
   try {
     const user = await User.findById(userId);
@@ -52,6 +74,7 @@ app.post("/api/bookmark", async (req, res) => {
     res.status(500).json({ message: "Error updating bookmark" });
   }
 });
+
 app.get("/", (req, res) => {
   res.send("<h1>TastyTreats is connected to the Database!</h1>");
 });
@@ -80,12 +103,14 @@ app.get("/api/recipes", async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
 app.get("/api/user-bookmarks/:userId", async (req, res) => {
   const user = await User.findById(req.params.userId);
-  res.json({ bookmarks: user.bookmarks });
+  res.json({ bookmarks: user ? user.bookmarks : [] });
 });
 
-app.delete("/api/recipes/:id", async (req, res) => {
+// NEW SECURITY FIX: Added authenticateToken middleware to protect deletions
+app.delete("/api/recipes/:id", authenticateToken, async (req, res) => {
   try {
     const deletedRecipe = await Recipe.findByIdAndDelete(req.params.id);
     if (!deletedRecipe)
@@ -95,6 +120,7 @@ app.delete("/api/recipes/:id", async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
 app.post("/api/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -111,7 +137,9 @@ app.post("/api/register", async (req, res) => {
     res.status(500).json({ message: "Error registering user" });
   }
 });
-app.put("/api/recipes/:id", async (req, res) => {
+
+// NEW SECURITY FIX: Added authenticateToken middleware to protect updates
+app.put("/api/recipes/:id", authenticateToken, async (req, res) => {
   try {
     const updatedRecipe = await Recipe.findByIdAndUpdate(
       req.params.id,
@@ -125,6 +153,18 @@ app.put("/api/recipes/:id", async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 });
+
+// NEW SECURITY FIX: Added endpoint for creating new recipes safely with protection
+app.post("/api/recipes", authenticateToken, async (req, res) => {
+  try {
+    const newRecipe = new Recipe(req.body);
+    await newRecipe.save();
+    res.status(201).json(newRecipe);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -143,11 +183,12 @@ app.post("/api/login", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 app.post("/api/create-order", async (req, res) => {
   const { amount } = req.body;
   try {
     const options = {
-      amount: Math.round(amount * 100), //
+      amount: Math.round(amount * 100),
       currency: "INR",
       receipt: "order_rcptid_" + Date.now(),
     };
@@ -157,9 +198,10 @@ app.post("/api/create-order", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.post("/api/ai/recommend", async (req, res) => {
   try {
-   const { prompt, menuContext } = req.body;
+    const { prompt, menuContext } = req.body;
     if (!process.env.GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY is missing");
     }
@@ -180,10 +222,12 @@ app.post("/api/ai/recommend", async (req, res) => {
 
     res.json({ response: result.response.text() });
   } catch (error) {
-    console.error("AI Error:", error.message);
+    
+console.error("AI Error:", error.message);
     res.status(500).json({ error: "AI Engine Error", details: error.message });
   }
 });
+
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
 });
