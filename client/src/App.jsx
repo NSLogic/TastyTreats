@@ -1,7 +1,9 @@
+```jsx
 import React, { useState, useEffect } from "react";
 import Register from "./Register";
 import Login from "./Login";
 import AIHelper from "./AIHelper";
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem("token"));
   const [recipes, setRecipes] = useState([]);
@@ -23,6 +25,7 @@ function App() {
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showCart, setShowCart] = useState(false);
+
   const loadRazorpayScript = () => {
     return new Promise((resolve) => {
       const script = document.createElement("script");
@@ -61,6 +64,7 @@ function App() {
     const razor = new window.Razorpay(options);
     razor.open();
   };
+
   const toggleTheme = () => {
     const newTheme = theme === "light" ? "dark" : "light";
     setTheme(newTheme);
@@ -72,6 +76,7 @@ function App() {
       .then((res) => res.json())
       .then((data) => setRecipes(data))
       .catch((err) => console.error("Error fetching data:", err));
+
     const userId = localStorage.getItem("userId");
     if (userId) {
       fetch(`https://tastytreats.onrender.com/api/user-bookmarks/${userId}`)
@@ -83,13 +88,19 @@ function App() {
 
   const addRecipe = (e) => {
     e.preventDefault();
+    const token = localStorage.getItem("token");
+
     fetch("https://tastytreats.onrender.com/api/recipes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` 
+      },
       body: JSON.stringify(newRecipe),
     })
       .then((res) => res.json())
       .then((data) => {
+        if (data.message) return alert(data.message);
         setRecipes([...recipes, data]);
         setNewRecipe({
           title: "",
@@ -100,14 +111,29 @@ function App() {
           imageUrl: "",
           category: "South Indian",
         });
-      });
+      })
+      .catch((err) => console.error("Error adding recipe:", err));
   };
 
   const deleteRecipe = (id) => {
+    const token = localStorage.getItem("token");
+
     fetch(`https://tastytreats.onrender.com/api/recipes/${id}`, {
       method: "DELETE",
-    }).then(() => setRecipes(recipes.filter((recipe) => recipe._id !== id)));
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.message && data.message !== "Recipe deleted successfully") {
+        return alert(data.message);
+      }
+      setRecipes(recipes.filter((recipe) => recipe._id !== id));
+    })
+    .catch((err) => console.error("Error deleting recipe:", err));
   };
+
   const startEdit = (recipe) => {
     setEditingId(recipe._id);
     setNewRecipe(recipe);
@@ -116,15 +142,20 @@ function App() {
 
   const handleSaveRecipe = (e) => {
     e.preventDefault();
+    const token = localStorage.getItem("token");
 
     if (editingId) {
       fetch(`https://tastytreats.onrender.com/api/recipes/${editingId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify(newRecipe),
       })
         .then((res) => res.json())
         .then((data) => {
+          if (data.message) return alert(data.message);
           setRecipes(recipes.map((r) => (r._id === editingId ? data : r)));
           setEditingId(null);
           setNewRecipe({
@@ -136,11 +167,13 @@ function App() {
             imageUrl: "",
             category: "South Indian",
           });
-        });
+        })
+        .catch((err) => console.error("Error updating recipe:", err));
     } else {
       addRecipe(e);
     }
   };
+
   const addToCart = (recipe) => {
     setCart([...cart, recipe]);
   };
@@ -153,43 +186,49 @@ function App() {
       setCart(newCart);
     }
   };
+
   const toggleBookmark = async (recipeId) => {
     const userId = localStorage.getItem("userId");
-    console.log("Attempting to bookmark with:", { userId, recipeId });
+    const token = localStorage.getItem("token");
 
     try {
       const response = await fetch(
         "https://tastytreats.onrender.com/api/bookmark",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
           body: JSON.stringify({ userId, recipeId }),
         },
       );
 
-      console.log("Response Status:", response.status);
       const data = await response.json();
-      console.log("Actual Server Data:", data);
 
       if (response.ok) {
         setUserBookmarks(data.bookmarks);
       } else {
         console.error("Server responded with error:", data);
+        alert(data.message || "Failed to update bookmark");
       }
     } catch (err) {
       console.error("Fetch failed:", err);
     }
   };
+
   const getItemCount = (id) => {
     return cart.filter((item) => item._id === id).length;
   };
-const calculateTotal = () => {
-  const total = cart.reduce((acc, item) => {
-    const price = parseFloat(item.price);
-    return acc + (isNaN(price) ? 0 : price);
-  }, 0);
-  return total.toFixed(2);
-};
+
+  const calculateTotal = () => {
+    const total = cart.reduce((acc, item) => {
+      const price = parseFloat(item.price);
+      return acc + (isNaN(price) ? 0 : price);
+    }, 0);
+    return total.toFixed(2);
+  };
+
   return (
     <div className={isLoggedIn ? "app-layout" : "login-page"}>
       {!isLoggedIn ? (
@@ -267,9 +306,9 @@ const calculateTotal = () => {
               <p>
                 <strong>Total: ₹{calculateTotal()}</strong>
               </p>
-             <button onClick={handlePayment} style={{ background: "#6200ea", color: "white", padding: "10px", width: "100%", border: "none", cursor: "pointer" }}>
-  Pay Now (₹{calculateTotal()})
-</button>
+              <button onClick={handlePayment} style={{ background: "#6200ea", color: "white", padding: "10px", width: "100%", border: "none", cursor: "pointer" }}>
+                Pay Now (₹{calculateTotal()})
+              </button>
               <button onClick={() => setShowCart(false)}>Close</button>
             </div>
           )}
@@ -445,4 +484,7 @@ const calculateTotal = () => {
     </div>
   );
 }
+
 export default App;
+
+```
